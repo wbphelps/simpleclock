@@ -22,6 +22,7 @@
  *
  */
 #define FEATURE_AUTO_DST
+#define FEATURE_AUTO_MENU
 
 #include <EEPROM.h>
 #include <Wire.h>
@@ -109,7 +110,7 @@ typedef enum {
 } state_t;
 
 state_t clock_state = STATE_CLOCK;
-bool menu_b1_first = false;
+bool menu_update = false;
 
 // display modes
 typedef enum {
@@ -126,7 +127,10 @@ display_mode_t clock_mode = MODE_NORMAL;
 bool g_blink; // flag to control when to blink the display
 bool g_blank; // flag to control if the display is to blanked out or not
 
-#define MENU_TIMEOUT 200  // (160?)
+#define MENU_TIMEOUT 250  // (160?)
+#ifdef FEATURE_AUTO_MENU
+#define BUTTON2_TIMEOUT 100
+#endif
 
 WireRtcLib::tm* t;
 uint16_t temp;
@@ -508,6 +512,9 @@ void loop()
   // Counters used when setting time
   int16_t time_to_set = 0;
   uint16_t button_released_timer = 0;
+#ifdef FEATURE_AUTO_MENU
+  uint16_t button2_release_timer = 0;
+#endif
   uint16_t menu_timer = 0;
   uint16_t button_speed = 25;
 
@@ -614,6 +621,9 @@ void loop()
       clock_state = STATE_MENU_BRIGHTNESS;
       menu(false, false);  // show first item in menu
       buttons.b2_keyup = 0; // clear state
+#ifdef FEATURE_AUTO_MENU
+      button2_release_timer = BUTTON2_TIMEOUT;  // start button 2 timer
+#endif      
     }
     // Right button toggles display mode
     else if (clock_state == STATE_CLOCK && buttons.b1_keyup) {
@@ -629,23 +639,45 @@ void loop()
 
       if (button_released_timer >= MENU_TIMEOUT) {
         button_released_timer = 0;
+#ifdef FEATURE_AUTO_MENU
+        button2_release_timer = 0;
+#endif
         clock_state = STATE_CLOCK;
       }
+      
+#ifdef FEATURE_AUTO_MENU
+      if (button2_release_timer > 0) {
+        button2_release_timer--;
+        if (button2_release_timer == 0) {
+          menu(false, true);  // show menu item value
+          menu_update = true;
+        }
+      }
+#endif
     
       if (buttons.b1_keyup) {  // right button
-        menu(!menu_b1_first, true);
+#ifdef FEATURE_AUTO_MENU
+        button2_release_timer = 0;  // cancel button 2 timer
+#endif
+        menu(menu_update, true);
         buttons.b1_keyup = false;
-        menu_b1_first = false;  // b1 not first time now
+        menu_update = true;  // b1 not first time now
       }  // if (buttons.b1_keyup) 
     
       if (buttons.b2_keyup) {  // left button
-        menu_b1_first = true;  // reset first time flag
+        menu_update = false;  // reset first time flag
+#ifdef FEATURE_AUTO_MENU
+        button2_release_timer = BUTTON2_TIMEOUT;  // restart button2 timer
+#endif
         clock_state = (state_t)(clock_state + 1);
       
 //        if (clock_state == STATE_MENU_LAST) clock_state = STATE_MENU_BRIGHTNESS;
-        if (clock_state == STATE_MENU_LAST) clock_state = STATE_CLOCK;  // 07nov12/wbp
-      
-        menu(false, false);
+        if (clock_state == STATE_MENU_LAST)
+          clock_state = STATE_CLOCK;  // 07nov12/wbp
+        else {
+          menu(false, false);  // show menu item name
+        }
+     
         buttons.b2_keyup = 0; // clear state
       }
     }
